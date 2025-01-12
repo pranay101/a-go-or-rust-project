@@ -45,16 +45,16 @@ func NewGame() *Game {
 // Update is called every frame to update game state
 func (g *Game) Update() error {
 	// Player movement
-	if ebiten.IsKeyPressed(ebiten.KeyW) { // Move up
+	if ebiten.IsKeyPressed(ebiten.KeyW) || ebiten.IsKeyPressed(ebiten.KeyUp) { // Move up
 		g.playerY -= g.moveSpeed
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyS) { // Move down
+	if ebiten.IsKeyPressed(ebiten.KeyS) || ebiten.IsKeyPressed(ebiten.KeyDown) { // Move down
 		g.playerY += g.moveSpeed
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyA) { // Move left
+	if ebiten.IsKeyPressed(ebiten.KeyA) || ebiten.IsKeyPressed(ebiten.KeyLeft) { // Move left
 		g.playerX -= g.moveSpeed
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyD) { // Move right
+	if ebiten.IsKeyPressed(ebiten.KeyD) || ebiten.IsKeyPressed(ebiten.KeyRight) { // Move right
 		g.playerX += g.moveSpeed
 	}
 
