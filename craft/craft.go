@@ -10,29 +10,46 @@ import (
 const (
 	screenWidth  = 800
 	screenHeight = 600
-	blockSize    = 40 // Size of each block in the world
+	blockSize    = 40
 )
 
+const (
+	BlockTypeGrass = iota
+	BlockTypeDirt
+	BlockTypeWater
+)
+
+type Block struct {
+	BlockType int
+}
+
 type Game struct {
-	world     [][]int
+	world     [][]Block
 	playerX   float64
 	playerY   float64
 	moveSpeed float64
 }
 
-func generateFlatWorld(rows, cols int) [][]int {
-	world := make([][]int, rows)
+func generateFlatWorld(rows, cols int) [][]Block {
+	world := make([][]Block, rows)
 	for i := range world {
-		world[i] = make([]int, cols)
+		world[i] = make([]Block, cols)
 		for j := range world[i] {
-			world[i][j] = 1 // Fill world with blocks (1 = block present)
+
+			if i == 0 {
+				world[i][j] = Block{BlockType: BlockTypeGrass}
+			} else if j%2 == 0 {
+				world[i][j] = Block{BlockType: BlockTypeDirt}
+			} else {
+				world[i][j] = Block{BlockType: BlockTypeWater}
+			}
 		}
 	}
 	return world
 }
 
 func NewGame() *Game {
-	world := generateFlatWorld(10, 10) // Create a 10x10 world grid
+	world := generateFlatWorld(80, 60)
 	return &Game{
 		world:     world,
 		playerX:   float64(screenWidth / 2),
@@ -79,14 +96,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Draw the world with offset based on the player's position
 	for y, row := range g.world {
 		for x, block := range row {
-			if block == 1 {
-				blockX := x*blockSize - int(g.playerX)%blockSize
-				blockY := y*blockSize - int(g.playerY)%blockSize
-				// Draw the block (green color)
-				blockColor := color.RGBA{0, 255, 0, 255} // Green block
-				screen.Fill(blockColor)
-				vector.DrawFilledRect(screen, float32(blockX), float32(blockY), float32(blockSize), float32(blockSize), blockColor, false)
+			blockX := x*blockSize - int(g.playerX)%blockSize
+			blockY := y*blockSize - int(g.playerY)%blockSize
+
+			var blockColor color.RGBA
+
+			switch block.BlockType {
+			case BlockTypeDirt:
+				blockColor = color.RGBA{139, 69, 19, 255}
+			case BlockTypeGrass:
+				blockColor = color.RGBA{0, 255, 0, 255}
+			case BlockTypeWater:
+				blockColor = color.RGBA{0, 0, 255, 255}
 			}
+
+			vector.DrawFilledRect(screen, float32(blockX), float32(blockY), float32(blockSize), float32(blockSize), blockColor, false)
+
 		}
 	}
 
