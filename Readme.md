@@ -1,1 +1,0 @@
-# A Go or Rust Project.
