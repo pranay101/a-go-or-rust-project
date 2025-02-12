@@ -1,190 +1,229 @@
-package main
+
+// Copyright 2014 The go-gl Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Renders a textured spinning cube using GLFW 3 and OpenGL 2.1.
+package main // import "github.com/go-gl/example/gl21-cube"
 
 import (
+	"go/build"
+	"image"
+	"image/draw"
+	_ "image/png"
 	"log"
-	"math"
+	"os"
 	"runtime"
 
-	"github.com/go-gl/gl/v4.6-core/gl"
+	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
-	"github.com/go-gl/mathgl/mgl32"
-)
-
-const (
-	windowWidth  = 800
-	windowHeight = 600
-	windowTitle  = "Minecraft Clone"
 )
 
 var (
-	yaw, pitch       float64
-	xPos, yPos, zPos float64
-	firstMouse       = true
-	lastX            = float64(windowWidth) / 2.0
-	lastY            = float64(windowHeight) / 2.0
-	cameraSpeed      = 0.05
-	cameraFront      = mgl32.Vec3{0, 0, -1}
-	cameraPos        = mgl32.Vec3{0, 0, 3}
-	cameraUp         = mgl32.Vec3{0, 1, 0}
+	texture   uint32
+	rotationX float32
+	rotationY float32
 )
 
+const width, height = 800, 600
+
 func init() {
+	// GLFW event handling must run on the main OS thread
 	runtime.LockOSThread()
 }
 
 func main() {
-	// Initialize GLFW
 	if err := glfw.Init(); err != nil {
 		log.Fatalln("failed to initialize glfw:", err)
 	}
 	defer glfw.Terminate()
 
-	// Set OpenGL version
-	glfw.WindowHint(glfw.ContextVersionMajor, 4)
-	glfw.WindowHint(glfw.ContextVersionMinor, 6)
-	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.Resizable, glfw.True)
-
-	// Create a window
-	window, err := glfw.CreateWindow(windowWidth, windowHeight, windowTitle, nil, nil)
+	glfw.WindowHint(glfw.Resizable, glfw.False)
+	glfw.WindowHint(glfw.ContextVersionMajor, 2)
+	glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	window, err := glfw.CreateWindow(width, height, "Cube", nil, nil)
 	if err != nil {
-		log.Fatalln("failed to create glfw window:", err)
+		panic(err)
 	}
 	window.MakeContextCurrent()
 
-	// Capture mouse
-	window.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
-
-	// Set callbacks
-	window.SetCursorPosCallback(mouseCallback)
-	window.SetKeyCallback(keyCallback)
-
-	// Initialize Glow
 	if err := gl.Init(); err != nil {
-		log.Fatalln("failed to initialize gl:", err)
+		panic(err)
 	}
 
-	gl.Enable(gl.DEPTH_TEST)
+	texture = newTexture("square.png")
+	defer gl.DeleteTextures(1, &texture)
 
-	// Main loop
+	setupScene()
 	for !window.ShouldClose() {
-		processInput(window)
-
-		// Clear the screen
-		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-
-		// Render a cube
-		renderCube()
-
-		// Swap buffers and poll events
+		drawScene()
 		window.SwapBuffers()
 		glfw.PollEvents()
 	}
 }
 
-func renderCube() {
-	vertices := []float32{
-		// positions          // colors
-		-0.5, -0.5, -0.5, 1, 0, 0,
-		 0.5, -0.5, -0.5, 0, 1, 0,
-		 0.5,  0.5, -0.5, 0, 0, 1,
-		-0.5,  0.5, -0.5, 1, 1, 0,
-		-0.5, -0.5,  0.5, 1, 0, 1,
-		 0.5, -0.5,  0.5, 0, 1, 1,
-		 0.5,  0.5,  0.5, 1, 1, 1,
-		-0.5,  0.5,  0.5, 0.5, 0.5, 0.5,
+func newTexture(file string) uint32 {
+	imgFile, err := os.Open(file)
+	if err != nil {
+		log.Fatalf("texture %q not found on disk: %v\n", file, err)
+	}
+	img, _, err := image.Decode(imgFile)
+	if err != nil {
+		panic(err)
 	}
 
-	indices := []uint32{
-		0, 1, 3, 1, 2, 3, // front
-		4, 5, 7, 5, 6, 7, // back
-		0, 1, 4, 1, 5, 4, // bottom
-		2, 3, 6, 3, 7, 6, // top
-		0, 3, 4, 3, 7, 4, // left
-		1, 2, 5, 2, 6, 5, // right
+	rgba := image.NewRGBA(img.Bounds())
+	if rgba.Stride != rgba.Rect.Size().X*4 {
+		panic("unsupported stride")
 	}
+	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
 
-	var VAO, VBO, EBO uint32
-	gl.GenVertexArrays(1, &VAO)
-	gl.GenBuffers(1, &VBO)
-	gl.GenBuffers(1, &EBO)
+	var texture uint32
+	gl.Enable(gl.TEXTURE_2D)
+	gl.GenTextures(1, &texture)
+	gl.BindTexture(gl.TEXTURE_2D, texture)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA,
+		int32(rgba.Rect.Size().X),
+		int32(rgba.Rect.Size().Y),
+		0,
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		gl.Ptr(rgba.Pix))
 
-	gl.BindVertexArray(VAO)
-
-	gl.BindBuffer(gl.ARRAY_BUFFER, VBO)
-	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.STATIC_DRAW)
-
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, EBO)
-	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices)*4, gl.Ptr(indices), gl.STATIC_DRAW)
-
-	// Position attribute
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 6*4, gl.PtrOffset(0))
-	gl.EnableVertexAttribArray(0)
-	// Color attribute
-	gl.VertexAttribPointer(1, 3, gl.FLOAT, false, 6*4, gl.PtrOffset(3*4))
-	gl.EnableVertexAttribArray(1)
-
-	gl.BindVertexArray(VAO)
-	gl.DrawElements(gl.TRIANGLES, int32(len(indices)), gl.UNSIGNED_INT, gl.PtrOffset(0))
-
-	// Cleanup
-	gl.BindVertexArray(0)
-	gl.DeleteBuffers(1, &VBO)
-	gl.DeleteBuffers(1, &EBO)
-	gl.DeleteVertexArrays(1, &VAO)
+	return texture
 }
 
-func mouseCallback(window *glfw.Window, xpos, ypos float64) {
-	if firstMouse {
-		lastX = xpos
-		lastY = ypos
-		firstMouse = false
-	}
+func setupScene() {
+	gl.Enable(gl.DEPTH_TEST)
+	gl.Enable(gl.LIGHTING)
 
-	xOffset := xpos - lastX
-	yOffset := lastY - ypos
-	lastX = xpos
-	lastY = ypos
+	gl.ClearColor(0.5, 0.5, 0.5, 0.0)
+	gl.ClearDepth(1)
+	gl.DepthFunc(gl.LEQUAL)
 
-	sensitivity := 0.1
-	xOffset *= sensitivity
-	yOffset *= sensitivity
+	ambient := []float32{0.5, 0.5, 0.5, 1}
+	diffuse := []float32{1, 1, 1, 1}
+	lightPosition := []float32{-5, 5, 10, 0}
+	gl.Lightfv(gl.LIGHT0, gl.AMBIENT, &ambient[0])
+	gl.Lightfv(gl.LIGHT0, gl.DIFFUSE, &diffuse[0])
+	gl.Lightfv(gl.LIGHT0, gl.POSITION, &lightPosition[0])
+	gl.Enable(gl.LIGHT0)
 
-	yaw += xOffset
-	pitch += yOffset
-
-	if pitch > 89.0 {
-		pitch = 89.0
-	}
-	if pitch < -89.0 {
-		pitch = -89.0
-	}
-
-	direction := mgl32.Vec3{
-		float32(math.Cos(mgl32.DegToRad(float32(yaw))) * math.Cos(mgl32.DegToRad(float32(pitch)))),
-		float32(math.Sin(mgl32.DegToRad(float32(pitch)))),
-		float32(math.Sin(mgl32.DegToRad(float32(yaw))) * math.Cos(mgl32.DegToRad(float32(pitch)))),
-	}
-	cameraFront = direction.Normalize()
+	gl.MatrixMode(gl.PROJECTION)
+	gl.LoadIdentity()
+	f := float64(width)/height - 1
+	gl.Frustum(-1-f, 1+f, -1, 1, 1.0, 10.0)
+	gl.MatrixMode(gl.MODELVIEW)
+	gl.LoadIdentity()
 }
 
-func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
-	if key == glfw.KeyEscape && action == glfw.Press {
-		window.SetShouldClose(true)
+func drawScene() {
+	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+	gl.MatrixMode(gl.MODELVIEW)
+	gl.LoadIdentity()
+	gl.Translatef(0, 0, -3.0)
+	gl.Rotatef(rotationX, 1, 0, 0)
+	gl.Rotatef(rotationY, 0, 1, 0)
+
+	rotationX += 0.5
+	rotationY += 0.5
+
+	gl.BindTexture(gl.TEXTURE_2D, texture)
+
+	gl.Color4f(1, 1, 1, 1)
+
+	gl.Begin(gl.QUADS)
+
+	gl.Normal3f(0, 0, 1)
+	gl.TexCoord2f(0, 0)
+	gl.Vertex3f(-1, -1, 1)
+	gl.TexCoord2f(1, 0)
+	gl.Vertex3f(1, -1, 1)
+	gl.TexCoord2f(1, 1)
+	gl.Vertex3f(1, 1, 1)
+	gl.TexCoord2f(0, 1)
+	gl.Vertex3f(-1, 1, 1)
+
+	gl.Normal3f(0, 0, -1)
+	gl.TexCoord2f(1, 0)
+	gl.Vertex3f(-1, -1, -1)
+	gl.TexCoord2f(1, 1)
+	gl.Vertex3f(-1, 1, -1)
+	gl.TexCoord2f(0, 1)
+	gl.Vertex3f(1, 1, -1)
+	gl.TexCoord2f(0, 0)
+	gl.Vertex3f(1, -1, -1)
+
+	gl.Normal3f(0, 1, 0)
+	gl.TexCoord2f(0, 1)
+	gl.Vertex3f(-1, 1, -1)
+	gl.TexCoord2f(0, 0)
+	gl.Vertex3f(-1, 1, 1)
+	gl.TexCoord2f(1, 0)
+	gl.Vertex3f(1, 1, 1)
+	gl.TexCoord2f(1, 1)
+	gl.Vertex3f(1, 1, -1)
+
+	gl.Normal3f(0, -1, 0)
+	gl.TexCoord2f(1, 1)
+	gl.Vertex3f(-1, -1, -1)
+	gl.TexCoord2f(0, 1)
+	gl.Vertex3f(1, -1, -1)
+	gl.TexCoord2f(0, 0)
+	gl.Vertex3f(1, -1, 1)
+	gl.TexCoord2f(1, 0)
+	gl.Vertex3f(-1, -1, 1)
+
+	gl.Normal3f(1, 0, 0)
+	gl.TexCoord2f(1, 0)
+	gl.Vertex3f(1, -1, -1)
+	gl.TexCoord2f(1, 1)
+	gl.Vertex3f(1, 1, -1)
+	gl.TexCoord2f(0, 1)
+	gl.Vertex3f(1, 1, 1)
+	gl.TexCoord2f(0, 0)
+	gl.Vertex3f(1, -1, 1)
+
+	gl.Normal3f(-1, 0, 0)
+	gl.TexCoord2f(0, 0)
+	gl.Vertex3f(-1, -1, -1)
+	gl.TexCoord2f(1, 0)
+	gl.Vertex3f(-1, -1, 1)
+	gl.TexCoord2f(1, 1)
+	gl.Vertex3f(-1, 1, 1)
+	gl.TexCoord2f(0, 1)
+	gl.Vertex3f(-1, 1, -1)
+
+	gl.End()
+}
+
+// Set the working directory to the root of Go package, so that its assets can be accessed.
+func init() {
+	dir, err := importPathToDir("github.com/go-gl/example/gl21-cube")
+	if err != nil {
+		log.Fatalln("Unable to find Go package in your GOPATH, it's needed to load assets:", err)
+	}
+	err = os.Chdir(dir)
+	if err != nil {
+		log.Panicln("os.Chdir:", err)
 	}
 }
 
-func processInput(window *glfw.Window) {
-	if window.GetKey(glfw.KeyW) == glfw.Press {
-		cameraPos = cameraPos.Add(cameraFront.Mul(cameraSpeed))
+// importPathToDir resolves the absolute path from importPath.
+// There doesn't need to be a valid Go package inside that import path,
+// but the directory must exist.
+func importPathToDir(importPath string) (string, error) {
+	p, err := build.Import(importPath, "", build.FindOnly)
+	if err != nil {
+		return "", err
 	}
-	if window.GetKey(glfw.KeyS) == glfw.Press {
-		cameraPos = cameraPos.Sub(cameraFront.Mul(cameraSpeed))
-	}
-	if window.GetKey(glfw.KeyA) == glfw.Press {
-		cameraPos = cameraPos.Sub(cameraFront.Cross(cameraUp).Normalize().Mul(cameraSpeed))
-	}
-	if window.GetKey(glfw.KeyD) == glfw.Press {
-		cameraPos = cameraPos.Add(cameraFront.Cross(cameraUp).Normalize().Mul(cameraSpeed))
-	}
+	return p.Dir, nil
 }
